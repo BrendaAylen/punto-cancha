@@ -18,11 +18,11 @@ Sistema de gestión de reservas para el club Punto Cancha (2 canchas de fútbol 
   - Python 3.10+ con Tkinter (Interfaz)
   - MySQL (Base de datos)
 
-  ## Estado Actua
+  ## Estado Actual
   Hito 2: Diccionario de datos completo. Normalización, script DDL e interfaz TKinter en curso
 
-  ## Estrcutura del repositorio
-  - '/docs' - diccionario de datos, informe, manual de usaruaio
+  ## Estructura del repositorio
+  - '/docs' - diccionario de datos, informe, manual de usuario
   - '/sql' - script DDL y consultas
   - '/app' - código Python de la aplicación
  
