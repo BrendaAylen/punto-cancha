@@ -129,3 +129,82 @@ BEGIN
     END IF;
 END$$
 
+CREATE TRIGGER trg_reserva_sin_superposicion_upd
+BEFORE UPDATE ON reserva
+FOR EACH ROW
+BEGIN
+    IF NEW.estado = 'Reservada' AND EXISTS (
+        SELECT 1
+        FROM reserva r
+        WHERE r.id_cancha = NEW.id_cancha
+          AND r.fecha = NEW.fecha
+          AND r.estado = 'Reservada'
+          AND r.id_reserva <> NEW.id_reserva
+          AND NEW.hora_inicio < r.hora_fin
+          AND NEW.hora_fin > r.hora_inicio
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La cancha ya tiene una reserva superpuesta en esa fecha y horario';
+    END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================
+-- TRIGGERS: cancha debe estar Disponible para reservar
+-- Se valida en INSERT y en UPDATE (por si se cambia la cancha
+-- o se reactiva una reserva desde 'Cancelada' a 'Reservada').
+-- ============================================================
+DELIMITER $$
+
+CREATE TRIGGER trg_reserva_cancha_disponible_ins
+BEFORE INSERT ON reserva
+FOR EACH ROW
+BEGIN
+    DECLARE v_estado_cancha VARCHAR(20);
+    IF NEW.estado = 'Reservada' THEN
+        SELECT estado INTO v_estado_cancha
+        FROM cancha WHERE id_cancha = NEW.id_cancha;
+        IF v_estado_cancha <> 'Disponible' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La cancha no esta disponible (mantenimiento o inactiva)';
+        END IF;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_reserva_cancha_disponible_upd
+BEFORE UPDATE ON reserva
+FOR EACH ROW
+BEGIN
+    DECLARE v_estado_cancha VARCHAR(20);
+    IF NEW.estado = 'Reservada' THEN
+        SELECT estado INTO v_estado_cancha
+        FROM cancha WHERE id_cancha = NEW.id_cancha;
+        IF v_estado_cancha <> 'Disponible' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La cancha no esta disponible (mantenimiento o inactiva)';
+        END IF;
+    END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================
+-- Operaciones habituales (ejemplos, no forman parte del DDL)
+-- ============================================================
+-- Cancelacion de una reserva: baja logica, nunca DELETE fisico
+-- UPDATE reserva SET estado = 'Cancelada' WHERE id_reserva = ?;
+
+-- Registro del pago, una vez realizado:
+-- INSERT INTO pago (id_reserva, monto, fecha_pago, medio_pago)
+-- VALUES (?, ?, ?, ?);
+
+-- Reservas pendientes de pago (sin fila en pago):
+-- SELECT r.*
+-- FROM reserva r
+-- LEFT JOIN pago p ON p.id_reserva = r.id_reserva
+-- WHERE r.estado = 'Reservada' AND p.id_pago IS NULL;
+
+-- Cantidad de reservas vigentes por cancha (RF10):
+-- SELECT c.id_cancha, c.nombre, COUNT(r.id_reserva) AS cantidad_reservas
+-- FROM cancha c
+-- LEFT JOIN reserva r ON r.id_cancha = c.id_cancha AND r.estado = 'Reservada'
+-- GROUP BY c.id_cancha, c.nombre;
