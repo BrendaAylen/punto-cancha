@@ -27,6 +27,8 @@ from funciones import (
     modificar_reserva,
     cancelar_reserva,
     reservas_por_cancha as consultar_reservas_por_cancha,
+    REPORTES,
+    ejecutar_reporte,
 )
 
 
@@ -42,7 +44,7 @@ class App:
         # Cualquier ErrorBD que ocurra dentro de un botón se muestra en un cuadro
         self.root.report_callback_exception = self.manejar_error
         self.root.title("Punto Cancha - Menú Principal")
-        self.root.geometry("600x560")
+        self.root.geometry("600x620")
         self.estilo()
         self.menu()
 
@@ -85,6 +87,7 @@ class App:
             ("Modos de pago", self.pagos_ventana),
             ("Disponibilidad", self.disponibilidad),
             ("Reservas por cancha", self.reservas_por_cancha),
+            ("Consultas con JOIN", self.reporte_join),
             ("Cerrar aplicación", self.salir),
         ]
 
@@ -219,11 +222,17 @@ class App:
                     "Selección", "Seleccione un socio."
                 )
                 return
-            dni = tree.item(sel[0], "values")[0]
-            if messagebox.askyesno("Confirmar", "¿Eliminar el socio?"):
+            valores = tree.item(sel[0], "values")
+            dni = valores[0]
+            if messagebox.askyesno(
+                "Confirmar baja",
+                f"¿Eliminar al socio {valores[1]} {valores[2]} (DNI {dni})?\n"
+                "Esta acción no se puede deshacer.",
+            ):
                 eliminar_socio(dni)
                 cargar()
                 limpiar()
+                messagebox.showinfo("Socios", "Socio eliminado.")
 
         botones = ttk.Frame(f)
         botones.pack(fill="x")
@@ -354,10 +363,15 @@ class App:
                 )
                 return
             n = tree.item(sel[0], "values")[0]
-            if messagebox.askyesno("Confirmar", "¿Eliminar la cancha?"):
+            if messagebox.askyesno(
+                "Confirmar baja",
+                f"¿Eliminar la cancha N° {n}?\n"
+                "Esta acción no se puede deshacer.",
+            ):
                 eliminar_cancha(n)
                 cargar()
                 limpiar()
+                messagebox.showinfo("Canchas", "Cancha eliminada.")
 
         b = ttk.Frame(f)
         b.pack(fill="x")
@@ -691,10 +705,13 @@ class App:
             if r and r["estado"] == "Cancelada":
                 messagebox.showinfo("Reserva", "La reserva ya está cancelada.")
             elif r and messagebox.askyesno(
-                "Confirmar", "¿Desea cancelar esta reserva?"
+                "Confirmar cancelación",
+                f"¿Cancelar la reserva N° {r['numero']} de {r['socio']}?\n"
+                f"{r['fecha']}  {r['inicio']} - {r['fin']}  (cancha {r['cancha']})",
             ):
                 cancelar_reserva(r["numero"])
                 cargar()
+                messagebox.showinfo("Reserva", "Reserva cancelada.")
 
         def detalle():
             r = seleccion()
@@ -954,6 +971,72 @@ class App:
             side="left", padx=5
         )
         ttk.Button(f, text="Volver", command=w.destroy).pack(
+            side="left", padx=5
+        )
+        cargar()
+
+    # ---------------- CONSULTAS CON JOIN ----------------
+    def reporte_join(self):
+        w = self.crear_toplevel("Consultas con JOIN", "1100x600")
+        f = ttk.Frame(w, padding=15)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, text="Consultas con JOIN", style="Title.TLabel").pack(
+            pady=8
+        )
+
+        nb = ttk.Notebook(f)
+        nb.pack(fill="both", expand=True)
+
+        claves = list(REPORTES)
+        arboles = {}
+        etiquetas = {}
+
+        for clave in claves:
+            rep = REPORTES[clave]
+            pestana = ttk.Frame(nb, padding=8)
+            nb.add(pestana, text=rep["titulo"])
+            ttk.Label(pestana, text=rep["descripcion"]).pack(
+                anchor="w", pady=(0, 6)
+            )
+            tree = ttk.Treeview(
+                pestana,
+                columns=[c[0] for c in rep["columnas"]],
+                show="headings",
+            )
+            for cid, titulo, ancho in rep["columnas"]:
+                tree.heading(cid, text=titulo)
+                tree.column(cid, width=ancho)
+            tree.pack(fill="both", expand=True)
+            etiqueta = ttk.Label(pestana, text="")
+            etiqueta.pack(anchor="w", pady=4)
+            arboles[clave] = tree
+            etiquetas[clave] = etiqueta
+
+        def cargar():
+            for clave in claves:
+                limpiar_tree(arboles[clave])
+                filas = ejecutar_reporte(clave)
+                for fila in filas:
+                    arboles[clave].insert("", "end", values=fila)
+                etiquetas[clave].config(text=f"{len(filas)} registro(s)")
+
+        def ver_sql():
+            clave = claves[nb.index(nb.select())]
+            messagebox.showinfo(
+                "Sentencia SQL - " + REPORTES[clave]["titulo"],
+                REPORTES[clave]["sql"],
+            )
+
+        botones = ttk.Frame(f)
+        botones.pack(fill="x", pady=(8, 0))
+        ttk.Button(botones, text="Actualizar", command=cargar).pack(
+            side="left", padx=5
+        )
+        ttk.Button(botones, text="Ver SQL", command=ver_sql).pack(
+            side="left", padx=5
+        )
+        ttk.Button(botones, text="Volver", command=w.destroy).pack(
             side="left", padx=5
         )
         cargar()
