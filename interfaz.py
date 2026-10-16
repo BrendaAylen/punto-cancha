@@ -1,17 +1,34 @@
 # interfaz.py
+import traceback
+from datetime import date
 import tkinter as tk
 from tkinter import ttk, messagebox
+from db import ErrorBD
 from funciones import (
-    socios,
-    canchas,
-    reservas,
     pagos,
-    socio_nombre,
     minutos,
     disponible,
     combo_socios,
     combo_canchas,
     validar_fecha,
+    validar_dni,
+    listar_socios,
+    obtener_socio,
+    crear_socio,
+    modificar_socio,
+    eliminar_socio,
+    listar_canchas,
+    crear_cancha,
+    modificar_cancha,
+    eliminar_cancha,
+    listar_reservas,
+    obtener_reserva,
+    crear_reserva,
+    modificar_reserva,
+    cancelar_reserva,
+    reservas_por_cancha as consultar_reservas_por_cancha,
+    REPORTES,
+    ejecutar_reporte,
 )
 
 
@@ -24,10 +41,21 @@ class App:
 
     def __init__(self, root):
         self.root = root
+        # Cualquier ErrorBD que ocurra dentro de un botón se muestra en un cuadro
+        self.root.report_callback_exception = self.manejar_error
         self.root.title("Punto Cancha - Menú Principal")
-        self.root.geometry("600x560")
+        self.root.geometry("600x620")
         self.estilo()
         self.menu()
+
+    def manejar_error(self, exc, val, tb):
+        if isinstance(val, ErrorBD):
+            messagebox.showerror("Error", str(val))
+        else:
+            traceback.print_exception(exc, val, tb)
+            messagebox.showerror(
+                "Error inesperado", f"{type(val).__name__}: {val}"
+            )
 
     def estilo(self):
         style = ttk.Style()
@@ -59,6 +87,7 @@ class App:
             ("Modos de pago", self.pagos_ventana),
             ("Disponibilidad", self.disponibilidad),
             ("Reservas por cancha", self.reservas_por_cancha),
+            ("Consultas con JOIN", self.reporte_join),
             ("Cerrar aplicación", self.salir),
         ]
 
@@ -106,7 +135,7 @@ class App:
 
         def cargar():
             limpiar_tree(tree)
-            for s in socios:
+            for s in listar_socios():
                 tree.insert(
                     "",
                     "end",
@@ -140,19 +169,17 @@ class App:
                     "Campos", "Complete todos los campos."
                 )
                 return
-            if any(s["dni"] == datos["DNI"] for s in socios):
+            if not validar_dni(datos["DNI"]):
                 messagebox.showwarning(
-                    "DNI", "Ya existe un socio con ese DNI."
+                    "DNI", "El DNI debe tener 7 u 8 dígitos (solo números)."
                 )
                 return
-            socios.append(
-                {
-                    "dni": datos["DNI"],
-                    "nombre": datos["Nombre"],
-                    "apellido": datos["Apellido"],
-                    "telefono": datos["Teléfono"],
-                    "email": datos["Email"],
-                }
+            crear_socio(
+                datos["DNI"],
+                datos["Nombre"],
+                datos["Apellido"],
+                datos["Teléfono"],
+                datos["Email"],
             )
             cargar()
             limpiar()
@@ -166,18 +193,25 @@ class App:
                 )
                 return
             dni = tree.item(sel[0], "values")[0]
-            for s in socios:
-                if s["dni"] == dni:
-                    s.update(
-                        {
-                            "dni": e["DNI"].get(),
-                            "nombre": e["Nombre"].get(),
-                            "apellido": e["Apellido"].get(),
-                            "telefono": e["Teléfono"].get(),
-                            "email": e["Email"].get(),
-                        }
-                    )
-                    break
+            datos = {k: x.get().strip() for k, x in e.items()}
+            if not all(datos.values()):
+                messagebox.showwarning(
+                    "Campos", "Complete todos los campos."
+                )
+                return
+            if not validar_dni(datos["DNI"]):
+                messagebox.showwarning(
+                    "DNI", "El DNI debe tener 7 u 8 dígitos (solo números)."
+                )
+                return
+            modificar_socio(
+                dni,
+                datos["DNI"],
+                datos["Nombre"],
+                datos["Apellido"],
+                datos["Teléfono"],
+                datos["Email"],
+            )
             cargar()
             limpiar()
 
@@ -188,11 +222,17 @@ class App:
                     "Selección", "Seleccione un socio."
                 )
                 return
-            dni = tree.item(sel[0], "values")[0]
-            if messagebox.askyesno("Confirmar", "¿Eliminar el socio?"):
-                socios[:] = [s for s in socios if s["dni"] != dni]
+            valores = tree.item(sel[0], "values")
+            dni = valores[0]
+            if messagebox.askyesno(
+                "Confirmar baja",
+                f"¿Eliminar al socio {valores[1]} {valores[2]} (DNI {dni})?\n"
+                "Esta acción no se puede deshacer.",
+            ):
+                eliminar_socio(dni)
                 cargar()
                 limpiar()
+                messagebox.showinfo("Socios", "Socio eliminado.")
 
         botones = ttk.Frame(f)
         botones.pack(fill="x")
@@ -259,11 +299,11 @@ class App:
 
         def cargar():
             limpiar_tree(tree)
-            for c in canchas:
+            for c in listar_canchas():
                 tree.insert(
                     "",
                     "end",
-                    values=(c["numero"], c["tipo"], c.get("estado", "Disponible")),
+                    values=(c["numero"], c["tipo"], c["estado"]),
                 )
 
         def limpiar():
@@ -275,14 +315,12 @@ class App:
             if not num.get() or not tipo.get() or not estado.get():
                 messagebox.showwarning("Campos", "Complete los campos.")
                 return
-            if any(c["numero"] == num.get() for c in canchas):
+            if not num.get().strip().isdigit() or int(num.get()) <= 0:
                 messagebox.showwarning(
-                    "Cancha", "Ese número ya existe."
+                    "Cancha", "El número de cancha debe ser un entero positivo."
                 )
                 return
-            canchas.append(
-                {"numero": num.get(), "tipo": tipo.get(), "estado": estado.get()}
-            )
+            crear_cancha(num.get().strip(), tipo.get(), estado.get())
             cargar()
             limpiar()
             messagebox.showinfo("Éxito", "Cancha registrada.")
@@ -304,15 +342,16 @@ class App:
                 )
                 return
             viejo = tree.item(sel[0], "values")[0]
-            for c in canchas:
-                if c["numero"] == viejo:
-                    c.update(
-                        {
-                            "numero": num.get(),
-                            "tipo": tipo.get(),
-                            "estado": estado.get(),
-                        }
-                    )
+            if (
+                not num.get().strip().isdigit()
+                or int(num.get()) <= 0
+                or not tipo.get()
+            ):
+                messagebox.showwarning(
+                    "Cancha", "Revise el número (entero positivo) y el tipo."
+                )
+                return
+            modificar_cancha(viejo, num.get().strip(), tipo.get(), estado.get())
             cargar()
             limpiar()
 
@@ -324,10 +363,15 @@ class App:
                 )
                 return
             n = tree.item(sel[0], "values")[0]
-            if messagebox.askyesno("Confirmar", "¿Eliminar la cancha?"):
-                canchas[:] = [c for c in canchas if c["numero"] != n]
+            if messagebox.askyesno(
+                "Confirmar baja",
+                f"¿Eliminar la cancha N° {n}?\n"
+                "Esta acción no se puede deshacer.",
+            ):
+                eliminar_cancha(n)
                 cargar()
                 limpiar()
+                messagebox.showinfo("Canchas", "Cancha eliminada.")
 
         b = ttk.Frame(f)
         b.pack(fill="x")
@@ -419,7 +463,7 @@ class App:
         widgets["Cancha"].grid(row=1, column=1)
 
         widgets["Fecha"] = ttk.Entry(form, width=32)
-        widgets["Fecha"].insert(0, "20/09/2026")
+        widgets["Fecha"].insert(0, date.today().strftime("%d/%m/%Y"))
         widgets["Fecha"].grid(row=2, column=1)
 
         widgets["Hora inicio"] = ttk.Entry(form, width=32)
@@ -458,7 +502,9 @@ class App:
             widgets["Fecha"].insert(0, reserva["fecha"])
             widgets["Hora inicio"].insert(0, reserva["inicio"])
             widgets["Hora fin"].insert(0, reserva["fin"])
-            widgets["Modo de pago"].set(reserva["pago"])
+            widgets["Modo de pago"].set(
+                reserva["pago"] if reserva["pago"] in pagos else ""
+            )
 
         def datos():
             socio = (
@@ -549,32 +595,9 @@ class App:
                 return
 
             if editar:
-                reserva.update(
-                    {
-                        "dni": d[0],
-                        "cancha": d[1],
-                        "fecha": d[2],
-                        "inicio": d[3],
-                        "fin": d[4],
-                        "pago": d[5],
-                    }
-                )
+                modificar_reserva(reserva["numero"], *d)
             else:
-                nuev_num = (
-                    max([r["numero"] for r in reservas], default=0) + 1
-                )
-                reservas.append(
-                    {
-                        "numero": nuev_num,
-                        "dni": d[0],
-                        "cancha": d[1],
-                        "fecha": d[2],
-                        "inicio": d[3],
-                        "fin": d[4],
-                        "pago": d[5],
-                        "estado": "Reservada",
-                    }
-                )
+                crear_reserva(*d)
 
             messagebox.showinfo(
                 "Éxito", "Reserva guardada correctamente."
@@ -640,14 +663,14 @@ class App:
 
         def cargar(lista=None):
             limpiar_tree(tree)
-            origen = reservas if lista is None else lista
+            origen = listar_reservas() if lista is None else lista
             for r in origen:
                 tree.insert(
                     "",
                     "end",
                     values=(
                         r["numero"],
-                        socio_nombre(r["dni"]),
+                        r["socio"],
                         r["cancha"],
                         r["fecha"],
                         r["inicio"],
@@ -665,34 +688,44 @@ class App:
                 )
                 return None
             n = int(tree.item(s[0], "values")[0])
-            return next((r for r in reservas if r["numero"] == n), None)
+            return obtener_reserva(n)
 
         def modificar():
             r = seleccion()
-            if r:
+            if r and r["estado"] == "Cancelada":
+                messagebox.showwarning(
+                    "Reserva", "No se puede modificar una reserva cancelada."
+                )
+            elif r:
                 w.destroy()
                 self.formulario_reserva(r)
 
         def cancelar_reserva_accion():
             r = seleccion()
-            if r and messagebox.askyesno(
-                "Confirmar", "¿Desea cancelar esta reserva?"
+            if r and r["estado"] == "Cancelada":
+                messagebox.showinfo("Reserva", "La reserva ya está cancelada.")
+            elif r and messagebox.askyesno(
+                "Confirmar cancelación",
+                f"¿Cancelar la reserva N° {r['numero']} de {r['socio']}?\n"
+                f"{r['fecha']}  {r['inicio']} - {r['fin']}  (cancha {r['cancha']})",
             ):
-                r["estado"] = "Cancelada"
+                cancelar_reserva(r["numero"])
                 cargar()
+                messagebox.showinfo("Reserva", "Reserva cancelada.")
 
         def detalle():
             r = seleccion()
             if r:
-                s = next((x for x in socios if x["dni"] == r["dni"]), None)
+                s = obtener_socio(r["dni"])
                 texto = (
                     f"Reserva N° {r['numero']}\n"
-                    f"Socio: {socio_nombre(r['dni'])}\n"
+                    f"Socio: {r['socio']}\n"
                     f"Cancha: {r['cancha']}\n"
                     f"Fecha: {r['fecha']}\n"
                     f"Horario: {r['inicio']} - {r['fin']}\n"
+                    f"Total: ${r['total']}\n"
                     f"Pago: {r['pago']}\n"
-                    f"Estado: {r.get('estado', 'Reservada')}"
+                    f"Estado: {r['estado']}"
                 )
                 if s:
                     texto += (
@@ -723,7 +756,7 @@ class App:
             ttk.Label(x, text="Cancha:").pack()
             ca = ttk.Combobox(
                 x,
-                values=["Todas"] + [c["numero"] for c in canchas],
+                values=["Todas"] + [c["numero"] for c in listar_canchas()],
                 state="readonly",
             )
             ca.set("Todas")
@@ -744,13 +777,11 @@ class App:
                         "Fecha", "Formato de fecha inválido."
                     )
                     return
-                lista = [
-                    r
-                    for r in reservas
-                    if (not dni.get() or dni.get() in r["dni"])
-                    and (ca.get() == "Todas" or r["cancha"] == ca.get())
-                    and (not usar.get() or r["fecha"] == fe.get())
-                ]
+                lista = listar_reservas(
+                    dni=dni.get().strip() or None,
+                    cancha=None if ca.get() == "Todas" else ca.get(),
+                    fecha=fe.get().strip() if usar.get() else None,
+                )
                 cargar(lista)
                 q.destroy()
 
@@ -801,12 +832,13 @@ class App:
 
         texto = (
             f"Reserva N°: {r['numero']}\n"
-            f"Socio: {socio_nombre(r['dni'])}\n"
+            f"Socio: {r['socio']}\n"
             f"Cancha: {r['cancha']}\n"
             f"Fecha: {r['fecha']}\n"
             f"Horario: {r['inicio']} - {r['fin']}\n"
+            f"Total: ${r['total']}\n"
             f"Modo de pago: {r['pago']}\n"
-            f"Estado: {r.get('estado', 'Reservada')}"
+            f"Estado: {r['estado']}"
         )
         ttk.Label(f, text=texto, justify="left", font=("Arial", 11)).pack(
             pady=20
@@ -839,7 +871,7 @@ class App:
 
         ttk.Label(x, text="Fecha (DD/MM/AAAA):").pack(side="left")
         fecha = ttk.Entry(x, width=12)
-        fecha.insert(0, "20/09/2026")
+        fecha.insert(0, date.today().strftime("%d/%m/%Y"))
         fecha.pack(side="left", padx=5)
 
         ttk.Label(x, text="Inicio:").pack(side="left")
@@ -874,7 +906,7 @@ class App:
             ):
                 messagebox.showwarning("Horario", "Revise las horas.")
                 return
-            for c in canchas:
+            for c in listar_canchas():
                 ok = disponible(
                     c["numero"], fecha.get(), ini.get(), fin.get()
                 )
@@ -884,7 +916,7 @@ class App:
                     values=(
                         c["numero"],
                         c["tipo"],
-                        c.get("estado", "Disponible"),
+                        c["estado"],
                         "Sí" if ok else "No",
                     ),
                 )
@@ -923,20 +955,15 @@ class App:
 
         def cargar():
             limpiar_tree(tree)
-            for c in canchas:
-                cantidad = sum(
-                    r["cancha"] == c["numero"]
-                    and r.get("estado") == "Reservada"
-                    for r in reservas
-                )
+            for c in consultar_reservas_por_cancha():
                 tree.insert(
                     "",
                     "end",
                     values=(
                         c["numero"],
                         c["tipo"],
-                        c.get("estado", "Disponible"),
-                        cantidad,
+                        c["estado"],
+                        c["cantidad"],
                     ),
                 )
 
@@ -944,6 +971,72 @@ class App:
             side="left", padx=5
         )
         ttk.Button(f, text="Volver", command=w.destroy).pack(
+            side="left", padx=5
+        )
+        cargar()
+
+    # ---------------- CONSULTAS CON JOIN ----------------
+    def reporte_join(self):
+        w = self.crear_toplevel("Consultas con JOIN", "1100x600")
+        f = ttk.Frame(w, padding=15)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, text="Consultas con JOIN", style="Title.TLabel").pack(
+            pady=8
+        )
+
+        nb = ttk.Notebook(f)
+        nb.pack(fill="both", expand=True)
+
+        claves = list(REPORTES)
+        arboles = {}
+        etiquetas = {}
+
+        for clave in claves:
+            rep = REPORTES[clave]
+            pestana = ttk.Frame(nb, padding=8)
+            nb.add(pestana, text=rep["titulo"])
+            ttk.Label(pestana, text=rep["descripcion"]).pack(
+                anchor="w", pady=(0, 6)
+            )
+            tree = ttk.Treeview(
+                pestana,
+                columns=[c[0] for c in rep["columnas"]],
+                show="headings",
+            )
+            for cid, titulo, ancho in rep["columnas"]:
+                tree.heading(cid, text=titulo)
+                tree.column(cid, width=ancho)
+            tree.pack(fill="both", expand=True)
+            etiqueta = ttk.Label(pestana, text="")
+            etiqueta.pack(anchor="w", pady=4)
+            arboles[clave] = tree
+            etiquetas[clave] = etiqueta
+
+        def cargar():
+            for clave in claves:
+                limpiar_tree(arboles[clave])
+                filas = ejecutar_reporte(clave)
+                for fila in filas:
+                    arboles[clave].insert("", "end", values=fila)
+                etiquetas[clave].config(text=f"{len(filas)} registro(s)")
+
+        def ver_sql():
+            clave = claves[nb.index(nb.select())]
+            messagebox.showinfo(
+                "Sentencia SQL - " + REPORTES[clave]["titulo"],
+                REPORTES[clave]["sql"],
+            )
+
+        botones = ttk.Frame(f)
+        botones.pack(fill="x", pady=(8, 0))
+        ttk.Button(botones, text="Actualizar", command=cargar).pack(
+            side="left", padx=5
+        )
+        ttk.Button(botones, text="Ver SQL", command=ver_sql).pack(
+            side="left", padx=5
+        )
+        ttk.Button(botones, text="Volver", command=w.destroy).pack(
             side="left", padx=5
         )
         cargar()
