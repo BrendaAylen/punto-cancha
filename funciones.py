@@ -347,3 +347,148 @@ def reservas_por_cancha():
         }
         for f in filas
     ]
+
+
+# ---------------------------------------------------------------
+# CONSULTAS CON JOIN (pantalla "Consultas con JOIN")
+# Cada reporte guarda su SQL para ejecutarlo y para mostrarlo en la interfaz.
+# ---------------------------------------------------------------
+SQL_DETALLE_RESERVAS = """
+SELECT r.id_reserva,
+       CONCAT(s.apellido, ', ', s.nombre) AS socio,
+       s.dni,
+       c.nombre AS cancha,
+       c.tipo,
+       r.fecha, r.hora_inicio, r.hora_fin,
+       r.total,
+       r.estado,
+       COALESCE(p.medio_pago, 'Pendiente') AS pago
+FROM reserva r
+JOIN socio  s ON s.id_socio  = r.id_socio
+JOIN cancha c ON c.id_cancha = r.id_cancha
+LEFT JOIN pago p ON p.id_reserva = r.id_reserva
+ORDER BY r.fecha, r.hora_inicio, r.id_reserva
+""".strip()
+
+SQL_PENDIENTES_PAGO = """
+SELECT r.id_reserva,
+       CONCAT(s.apellido, ', ', s.nombre) AS socio,
+       s.telefono,
+       c.nombre AS cancha,
+       r.fecha, r.hora_inicio, r.hora_fin,
+       r.total
+FROM reserva r
+JOIN socio  s ON s.id_socio  = r.id_socio
+JOIN cancha c ON c.id_cancha = r.id_cancha
+LEFT JOIN pago p ON p.id_reserva = r.id_reserva
+WHERE r.estado = 'Reservada'
+  AND p.id_pago IS NULL
+ORDER BY r.fecha, r.hora_inicio
+""".strip()
+
+SQL_RESUMEN_SOCIOS = """
+SELECT s.dni,
+       CONCAT(s.apellido, ', ', s.nombre) AS socio,
+       COUNT(r.id_reserva)  AS reservas_vigentes,
+       COALESCE(SUM(p.monto), 0) AS total_pagado
+FROM socio s
+LEFT JOIN reserva r ON r.id_socio = s.id_socio AND r.estado = 'Reservada'
+LEFT JOIN pago    p ON p.id_reserva = r.id_reserva
+GROUP BY s.id_socio, s.dni, s.apellido, s.nombre
+ORDER BY total_pagado DESC, socio
+""".strip()
+
+
+def _dinero(valor):
+    return f"${Decimal(valor):.2f}"
+
+
+def _fila_detalle(f):
+    return (
+        f["id_reserva"],
+        f["socio"],
+        f["dni"],
+        f["cancha"],
+        TIPO_DB_A_UI.get(f["tipo"], f["tipo"]),
+        fecha_a_ui(f["fecha"]),
+        f"{hora_a_ui(f['hora_inicio'])} - {hora_a_ui(f['hora_fin'])}",
+        _dinero(f["total"]),
+        f["pago"],
+        f["estado"],
+    )
+
+
+def _fila_pendiente(f):
+    return (
+        f["id_reserva"],
+        f["socio"],
+        f["telefono"] or "",
+        f["cancha"],
+        fecha_a_ui(f["fecha"]),
+        f"{hora_a_ui(f['hora_inicio'])} - {hora_a_ui(f['hora_fin'])}",
+        _dinero(f["total"]),
+    )
+
+
+def _fila_resumen(f):
+    return (
+        f["dni"],
+        f["socio"],
+        f["reservas_vigentes"],
+        _dinero(f["total_pagado"]),
+    )
+
+
+REPORTES = {
+    "detalle": {
+        "titulo": "Detalle de reservas",
+        "descripcion": "JOIN de reserva + socio + cancha + pago (LEFT JOIN).",
+        "sql": SQL_DETALLE_RESERVAS,
+        "fila": _fila_detalle,
+        "columnas": [
+            ("n", "N°", 45),
+            ("socio", "Socio", 170),
+            ("dni", "DNI", 90),
+            ("cancha", "Cancha", 80),
+            ("tipo", "Tipo", 80),
+            ("fecha", "Fecha", 90),
+            ("horario", "Horario", 110),
+            ("total", "Total", 90),
+            ("pago", "Pago", 100),
+            ("estado", "Estado", 90),
+        ],
+    },
+    "pendientes": {
+        "titulo": "Pendientes de pago",
+        "descripcion": "Reservas vigentes sin pago: LEFT JOIN con pago y filtro IS NULL.",
+        "sql": SQL_PENDIENTES_PAGO,
+        "fila": _fila_pendiente,
+        "columnas": [
+            ("n", "N°", 45),
+            ("socio", "Socio", 190),
+            ("tel", "Teléfono", 110),
+            ("cancha", "Cancha", 90),
+            ("fecha", "Fecha", 100),
+            ("horario", "Horario", 120),
+            ("total", "Total a cobrar", 120),
+        ],
+    },
+    "socios": {
+        "titulo": "Resumen por socio",
+        "descripcion": "JOIN con GROUP BY: reservas vigentes y total pagado por cada socio.",
+        "sql": SQL_RESUMEN_SOCIOS,
+        "fila": _fila_resumen,
+        "columnas": [
+            ("dni", "DNI", 110),
+            ("socio", "Socio", 220),
+            ("cant", "Reservas vigentes", 150),
+            ("pagado", "Total pagado", 140),
+        ],
+    },
+}
+
+
+def ejecutar_reporte(clave):
+    """Ejecuta el SQL del reporte y devuelve filas listas para mostrar."""
+    rep = REPORTES[clave]
+    return [rep["fila"](f) for f in consultar(rep["sql"])]
