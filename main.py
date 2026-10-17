@@ -1,4 +1,6 @@
 # main.py
+# Verifica la conexión a la base de datos e inicia la interfaz gráfica.
+
 import tkinter as tk
 from tkinter import messagebox
 

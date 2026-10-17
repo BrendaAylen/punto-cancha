@@ -1,4 +1,5 @@
 # datos.py
+# Define los datos iniciales de socios, canchas, reservas y métodos de pago.
 
 def obtener_datos_iniciales():
     socios = [
