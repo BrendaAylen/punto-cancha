@@ -1,9 +1,14 @@
 # db.py
 """Conexión a la base de datos MySQL/MariaDB de Punto Cancha.
 
-Los datos de conexión se leen de variables de entorno (así la contraseña
-no queda escrita en el código ni se sube a GitHub). Si no están definidas,
-se usan los valores por defecto de abajo: ajustá PC_DB_PASSWORD.
+Los datos de conexión se pueden cambiar con variables de entorno
+(PC_DB_USER, PC_DB_PASSWORD, PC_DB_HOST, PC_DB_PORT, PC_DB_NAME).
+
+Si no se definen, el programa se conecta con el usuario de RECEPCION
+(recepcion_pc), que tiene permisos limitados y se crea con roles_acceso.sql.
+Nunca se usa root por defecto. La clave por defecto es la de demostración
+del script roles_acceso.sql; para otro usuario (por ejemplo admin_pc, que
+puede eliminar registros) definir las variables de entorno antes de ejecutar.
 """
 import os
 from contextlib import contextmanager
@@ -14,8 +19,8 @@ from mysql.connector import Error as MySQLError
 CONFIG = {
     "host": os.getenv("PC_DB_HOST", "localhost"),
     "port": int(os.getenv("PC_DB_PORT", "3306")),
-    "user": os.getenv("PC_DB_USER", "root"),
-    "password": os.getenv("PC_DB_PASSWORD", ""),
+    "user": os.getenv("PC_DB_USER", "recepcion_pc"),
+    "password": os.getenv("PC_DB_PASSWORD", "Recepcion_pc_2026"),
     "database": os.getenv("PC_DB_NAME", "punto_cancha"),
     "charset": "utf8mb4",
 }
